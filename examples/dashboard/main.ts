@@ -2,13 +2,6 @@ import './style.css';
 
 type Service = { name: string; status: string; latency: number };
 
-const services: Service[] = [
-  { name: 'Identity API', status: 'Operational', latency: 42 },
-  { name: 'Metrics API', status: 'Operational', latency: 86 },
-  { name: 'Billing API', status: 'Operational', latency: 118 },
-  { name: 'Search API', status: 'Operational', latency: 64 }
-];
-
 function render() {
   document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <main class="shell">
