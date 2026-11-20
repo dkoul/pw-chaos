@@ -115,19 +115,22 @@ await chaos.apply('api.delay', { url: '**/api/orders', ms: 300 });
 
 | Recipe | What the app sees | Options |
 | --- | --- | --- |
-| `api.status` | An HTTP status and a JSON body | `url`, `status` (default `500`), `body` (default `{ error: 'Chaos injected' }`), `times` |
+| `api.status` | An HTTP status and a JSON or raw body | `url`, `status` (default `500`), `body`, `rawBody`, `contentType`, `times` |
 | `api.delay` | The real request, after a pause | `url`, `ms` (default `2000`), `times` |
 | `api.abort` | A failed network request | `url`, `times` |
 | `api.timeout` | A pause, then a timed-out request | `url`, `ms` (default `5000`), `times` |
 | `api.empty` | `200` and `{}` | `url`, `times` |
 | `api.corrupt-json` | `200` and truncated JSON | `url`, `times` |
+| `api.rate-limit` | HTTP `429` with optional `Retry-After` | `url`, `retryAfterMs`, `times` |
+| `api.intermittent` | Randomly abort or pass through (see `probability`) | `url`, `probability` (default `0.5`, range `0`–`1`), `times` |
 | `browser.offline` | Every request in the browser context fails | none |
 | `ui.hide` | The selector stays in the DOM with `visibility: hidden` | `selector` |
 | `storage.clear` | `localStorage` keys removed on the current origin | `keys` (omit to clear all) |
+| `sessionStorage.clear` | `sessionStorage` keys removed on the current origin | `keys` (omit to clear all) |
 
 `times` limits how many matching requests the recipe handles. Omit it to keep the recipe active until `restore()`.
 
-Several recipes can be active together when they own different resources. Two route recipes can use different `url` patterns. The same `url` pattern, a second `browser.offline`, a second `storage.clear`, or the same `ui.hide` selector throws `ChaosConflictError`.
+Several recipes can be active together when they own different resources. Two route recipes can use different `url` patterns. The same `url` pattern, a second `browser.offline`, a second `storage.clear` / `sessionStorage.clear` on the same storage bucket, or the same `ui.hide` selector throws `ChaosConflictError`. Missing `url` or `selector` throws `ChaosValidationError`.
 
 ```ts
 await chaos.apply('api.delay', { url: '**/api/orders', ms: 300 });
@@ -194,7 +197,7 @@ await chaos.apply('storage.clear', { keys: ['session'] });
 
 ## Custom recipes
 
-Register extra recipes once, in the fixture module or a setup file that loads before tests call `chaos(page)`. Each name must be unique. `resources` is how the engine detects collisions. Route recipes should use `route:${url}` so they collide with a built-in recipe on the same pattern.
+Register extra recipes once, in the fixture module or a setup file that loads before tests call `chaos(page)`. Each name must be unique. `resources` is how the engine detects collisions. Route recipes should use `route:${url}` so they collide with a built-in recipe on the same pattern. Optional `validate(options)` runs before `apply` — use it the same way as built-in recipes. For `ui.hide`-style recipes, only pass trusted selectors; unsanitized values can inject CSS.
 
 ```ts
 import type { Route } from '@playwright/test';
@@ -228,13 +231,33 @@ await chaos.apply('billing.gateway-maintenance', { url: '**/api/billing/**' });
 ## API
 
 ```ts
-import { chaos, ChaosConflictError, registerRecipe } from 'playwright-chaos-recipes';
+import {
+  chaos,
+  ChaosConflictError,
+  ChaosValidationError,
+  registerRecipe,
+  type RecipeName,
+  type RecipeOptionsMap
+} from 'playwright-chaos-recipes';
 
 const experiment = chaos(page);
 
 await experiment.apply('api.empty', { url: '**/api/orders' });
-await experiment.list();    // ['api.empty']
+await experiment.list();    // RecipeName[]
 await experiment.restore(); // runs cleanups in reverse order
+```
+
+`apply(name, options)` is typed from `RecipeOptionsMap`, so built-in recipe names and options are checked at compile time.
+
+Non-JSON error pages:
+
+```ts
+await chaos.apply('api.status', {
+  url: '**/maintenance',
+  status: 503,
+  contentType: 'text/html',
+  rawBody: '<h1>Down for maintenance</h1>'
+});
 ```
 
 `restore()` removes every recipe applied on that controller. If a cleanup throws, the controller still clears its list and then throws an `AggregateError`.
@@ -244,10 +267,11 @@ await experiment.restore(); // runs cleanups in reverse order
 ```bash
 npm install
 npx playwright install chromium
+npm run lint
 npm test
 ```
 
-`npm run demo` serves the sample dashboard. The specs in `tests/dashboard.spec.ts` are the short versions of the patterns above.
+`npm run demo` serves the sample dashboard under `examples/dashboard/` (see `examples/dashboard/main.ts`). The specs in `tests/` import the compiled `dist/` entry, matching what consumers get from npm. `tests/fixtures.ts` shows the auto-`restore` fixture pattern from above.
 
 ## License
 

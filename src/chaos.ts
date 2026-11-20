@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { recipes } from './recipes.js';
-import type { AppliedRecipe, RecipeDefinition } from './types.js';
+import type { AppliedRecipe, OptionlessRecipeName, RecipeDefinition, RecipeName, RecipeOptionsMap } from './types.js';
 
 export class ChaosConflictError extends Error {
   constructor(resource: string, existing: string, incoming: string) {
@@ -9,21 +9,26 @@ export class ChaosConflictError extends Error {
   }
 }
 
+type ApplyArgs<K extends RecipeName> = RecipeOptionsMap[K] extends Record<string, never>
+  ? [options?: RecipeOptionsMap[K]]
+  : [options: RecipeOptionsMap[K]];
+
 export class ChaosController {
   private readonly applied: AppliedRecipe[] = [];
   private readonly owners = new Map<string, string>();
 
   constructor(private readonly page: Page) {}
 
-  async apply(name: string, options: unknown = {}): Promise<void> {
+  async apply<K extends RecipeName>(name: K, ...args: ApplyArgs<K>): Promise<void> {
     const recipe = recipes.find(item => item.name === name);
     if (!recipe) {
       throw new Error(`Unknown chaos recipe "${name}". Available: ${recipes.map(r => r.name).join(', ')}`);
     }
-    await this.applyDefinition(recipe, options);
+    const options = (args[0] ?? {}) as RecipeOptionsMap[K];
+    await this.applyDefinition(recipe as RecipeDefinition<RecipeOptionsMap[K]>, name, options);
   }
 
-  async applyMany(names: string[]): Promise<void> {
+  async applyMany(names: OptionlessRecipeName[]): Promise<void> {
     for (const name of names) await this.apply(name);
   }
 
@@ -45,26 +50,27 @@ export class ChaosController {
     }
   }
 
-  async list(): Promise<string[]> {
-    return this.applied.map(item => item.name);
+  async list(): Promise<RecipeName[]> {
+    return this.applied.map(item => item.name as RecipeName);
   }
 
-  private async applyDefinition(
-    recipe: RecipeDefinition<any>,
-    options: unknown
+  private async applyDefinition<K extends RecipeName>(
+    recipe: RecipeDefinition<RecipeOptionsMap[K]>,
+    name: K,
+    options: RecipeOptionsMap[K]
   ): Promise<void> {
+    recipe.validate?.(options);
     const resources = recipe.resources?.(options) ?? [];
     for (const resource of resources) {
       const owner = this.owners.get(resource);
       if (owner) throw new ChaosConflictError(resource, owner, recipe.name);
     }
 
-    // Reserve resources before applying to prevent partial concurrent ownership.
     for (const resource of resources) this.owners.set(resource, recipe.name);
     try {
       const result = await recipe.apply(this.page, options);
       const cleanup = typeof result === 'function' ? result : undefined;
-      this.applied.push({ name: recipe.name, cleanup, resources });
+      this.applied.push({ name, cleanup, resources });
     } catch (error) {
       for (const resource of resources) this.owners.delete(resource);
       throw error;
