@@ -262,6 +262,39 @@ await chaos.apply('api.status', {
 
 `restore()` removes every recipe applied on that controller. If a cleanup throws, the controller still clears its list and then throws an `AggregateError`.
 
+## Alternatives
+
+Other tools cover overlapping ground. This table is a coarse map—check each project’s docs for full scope.
+
+| Project | Best when you need |
+| --- | --- |
+| [Playwright `page.route()`](https://playwright.dev/docs/network) | Full control in one test; no dependency |
+| [Chaos Maker](https://github.com/chaos-maker-dev/chaos-maker) (`@chaos-maker/playwright`) | Named presets, seeds, chaos logs, WebSocket/SSE/service-worker/GraphQL surfaces, Cypress and other runners |
+| [chaosbringer](https://github.com/mizchi/chaosbringer) / [`@mizchi/playwright-faults`](https://www.npmjs.com/package/@mizchi/playwright-faults) | Crawler-led chaos, probability-based faults, page lifecycle and JS runtime injection, optional server-side faults |
+| [glitch-playwright](https://github.com/st1lson/glitch-js) | Faults on a **real** API through a Glitch proxy (latency, pause, fail), not only browser interception |
+| [cypress-network-chaos](https://github.com/SnehalP75/cypress-network-chaos) | The same “one line in a spec” idea for **Cypress** (`cy.failRequests`, network presets, suite-wide chaos mode) |
+
+### Why use playwright-chaos-recipes
+
+**playwright-chaos-recipes** is intentionally small. It does not replace a chaos platform or a proxy; it packages what many teams already hand-roll with `page.route()` into named recipes, with teardown and collision rules.
+
+**What you get**
+
+- **Test-native** — uses Playwright’s `page.route()`, `context.setOffline()`, and `page.evaluate()` only. No in-app script bundle, no extra Playwright config, no external server.
+- **Explicit recipes** — `api.status`, `api.delay`, `browser.offline`, `storage.clear`, and the rest map directly to “break this, assert that, put it back.”
+- **Safe composition** — resource keys block two recipes from silently owning the same route pattern, offline mode, storage bucket, or `ui.hide` selector (`ChaosConflictError`).
+- **Deterministic teardown** — `restore()` runs cleanups in reverse order; easy to wire once in a `chaos` fixture so failures still clean up.
+- **Typed built-ins** — `RecipeOptionsMap` keeps recipe names and options aligned at compile time.
+
+**What it is not**
+
+- No preset catalog (“mobile 3G + checkout-degraded”), global suite chaos mode, or in-page `fetch` monkey-patching.
+- No WebSocket, GraphQL operation, or service-worker-specific matchers.
+- No crawler that roams your app or server-side fault injection inside the API process.
+- No proxy-based faults against live backends ([Glitch](https://github.com/st1lson/glitch) and similar).
+
+Choose **Chaos Maker** or **chaosbringer** when you want breadth, exploration, or multi-surface chaos. Choose **playwright-chaos-recipes** when you are extending **existing** Playwright specs with a few targeted, reproducible failures and you want shared recipe names plus conflict-safe `restore()` without adopting a larger framework.
+
 ## Develop this repository
 
 ```bash
